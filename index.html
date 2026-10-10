@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Avaliador de artigos</title>
+  <style>
+    :root { --bg:#f7f7fb; --card:#fff; --txt:#1f2430; --sub:#5b6172; --ok:#1f8a4c; --ruim:#b42318; --aviso:#b26b00; --borda:#e3e5ee; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15171d; --card:#1e2129; --txt:#eceef5; --sub:#a4a9b8; --ok:#4ad08a; --ruim:#ff8a80; --aviso:#ffc766; --borda:#2e323d; } }
+    :root[data-theme="dark"] { --bg:#15171d; --card:#1e2129; --txt:#eceef5; --sub:#a4a9b8; --ok:#4ad08a; --ruim:#ff8a80; --aviso:#ffc766; --borda:#2e323d; }
+    body { margin:0; background:var(--bg); color:var(--txt); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    main { max-width: 860px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 1.5rem; margin: 8px 0 4px; }
+    p.sub { color: var(--sub); margin: 0 0 16px; }
+    textarea { width:100%; min-height: 280px; box-sizing:border-box; padding:12px; border:1px solid var(--borda); border-radius:10px; background:var(--card); color:var(--txt); font:inherit; font-size:15px; }
+    .acoes { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0; }
+    button { padding:10px 16px; border-radius:8px; border:1px solid var(--borda); background:var(--card); color:var(--txt); cursor:pointer; font-size:15px; }
+    button.primario { background:#4f46e5; border-color:#4f46e5; color:#fff; }
+    button:disabled { opacity:.5; cursor:wait; }
+    .card { background:var(--card); border:1px solid var(--borda); border-radius:12px; padding:16px; margin-top:16px; }
+    .veredito { font-size:1.2rem; font-weight:700; }
+    .ok { color:var(--ok); } .ruim { color:var(--ruim); } .aviso { color:var(--aviso); }
+    ul { margin: 6px 0 0; padding-left: 20px; }
+    li { margin-bottom: 4px; }
+    .nota { font-size: 2rem; font-weight: 800; }
+    .erro { color: var(--ruim); }
+    @media (max-width: 600px) { main { padding: 12px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Avaliador de artigos</h1>
+  <p class="sub">Cole o texto completo (com os títulos ## e a seção Fontes). Você recebe as checagens e a nota.</p>
+
+  <textarea id="texto" placeholder="Cole o artigo aqui..."></textarea>
+
+  <div class="acoes">
+    <button class="primario" id="avaliar">Avaliar com IA</button>
+    <button id="local">Só checagens locais (sem custo)</button>
+    <button id="limpar">Limpar</button>
+  </div>
+
+  <div id="resultado"></div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function render(d) {
+    const cor = d.decisao === 'APROVADO' ? 'ok' : d.decisao === 'DEVOLVER' ? 'ruim' : 'aviso';
+    const rotulo = d.decisao === 'SEM_IA' ? 'Checagens locais concluídas' : d.decisao;
+    let html = `<div class="card"><div class="veredito ${cor}">${esc(rotulo)}</div>`;
+    if (d.ia) html += `<div class="nota">${esc(d.ia.nota)}<span style="font-size:1rem;color:var(--sub)"> / 100 (mínimo ${esc(d.notaMinima)})</span></div>`;
+    html += `<h3>Checagens locais</h3><ul>${d.local.resultados.map((r) => `<li class="${r.ok ? 'ok' : (r.critica ? 'ruim' : 'aviso')}">${r.ok ? '✔' : '✖'} ${esc(r.msg)}</li>`).join('')}</ul>`;
+    if (d.ia) {
+      html += `<h3>Critérios</h3><ul>${d.ia.criterios.map((c) => `<li class="${c.ok ? 'ok' : 'ruim'}">${c.ok ? '✔' : '✖'} ${esc(c.id)}: ${esc(c.motivo)}</li>`).join('')}</ul>`;
+      if (d.ia.sugestoes?.length) html += `<h3>Sugestões</h3><ul>${d.ia.sugestoes.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>`;
+    }
+    html += `</div>`;
+    $('resultado').innerHTML = html;
+  }
+
+  async function avaliar(modo, botao) {
+    const texto = $('texto').value.trim();
+    if (!texto) { $('resultado').innerHTML = '<p class="erro">Cole o texto do artigo.</p>'; return; }
+    botao.disabled = true;
+    $('resultado').innerHTML = '<p class="sub">Avaliando...</p>';
+    try {
+      const r = await fetch('/api/avaliar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texto, modo }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erro || 'Erro');
+      render(d);
+    } catch (e) {
+      $('resultado').innerHTML = `<p class="erro">${esc(e.message)}</p>`;
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
+  $('avaliar').onclick = (e) => avaliar('completo', e.target);
+  $('local').onclick = (e) => avaliar('local', e.target);
+  $('limpar').onclick = () => { $('texto').value = ''; $('resultado').innerHTML = ''; };
+</script>
+</body>
+</html>
